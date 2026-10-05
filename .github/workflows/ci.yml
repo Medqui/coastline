@@ -1,0 +1,36 @@
+name: Coastline PMS CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: node --test scripts/read-with-retry.test.cjs
+      - run: npm run build
+  database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - run: supabase start
+      - run: supabase test db
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: python3 scripts/test-migration-replay.py
+      - run: python3 scripts/test-booking-concurrency.py
