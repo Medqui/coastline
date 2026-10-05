@@ -2,21 +2,20 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { Check, Copy, LoaderCircle, Plus, Send } from "lucide-react";
-import { changeMemberRoleAction, createPropertyAction, createTeamInvitationAction, type ActionState } from "@/app/actions";
+import { changeMemberRoleAction, createPropertyAction, createTeamInvitationAction, saveStaffNameAction, type ActionState } from "@/app/actions";
 
-type Member = { userId: string; email: string; role: string; active: boolean };
-export function AdminPanel({ organizationId, propertyId, propertyName, properties, members, role }: {
+type Member = { userId: string; email: string; fullName: string; role: string; active: boolean };
+export function AdminPanel({ organizationId, propertyId, propertyName, members, role }: {
   organizationId: string; propertyId: string; propertyName: string;
   properties: { id: string; name: string }[]; members: Member[]; role: string;
 }) {
-  return <><div className="page-heading"><div><div className="eyebrow">HOTEL SETTINGS</div><h1>Properties & team</h1><p>Manage locations and staff access for this hotel.</p></div></div>
+  return <><div className="page-heading"><div><div className="eyebrow">HOTEL SETTINGS</div><h1>Staff</h1><p>Invite staff and manage their roles and property access.</p></div></div>
     <div className="content-grid two-col">
-      <section className="panel"><div className="panel-heading"><div><strong>Add a property</strong><small>Create rooms and a default room rate.</small></div></div><PropertyForm organizationId={organizationId}/><div className="admin-list">{properties.map(property => <div className="admin-list-row" key={property.id}><span>{property.name}</span><small>{property.id === propertyId ? "Current property" : "Available to your role"}</small></div>)}</div></section>
       <section className="panel"><div className="panel-heading"><div><strong>Invite hotel staff</strong><small>Links expire after 7 days and are limited to a property.</small></div></div>{role === "owner" ? <InviteForm organizationId={organizationId} propertyId={propertyId} propertyName={propertyName}/> : <p className="empty-state">Only the hotel owner can invite staff.</p>}</section>
-      <section className="panel"><div className="panel-heading"><div><strong>Team roles</strong><small>Role changes take effect immediately.</small></div></div>{role === "owner" ? <div className="admin-list">{members.filter(member => member.active).map(member => <MemberRole key={member.userId} organizationId={organizationId} member={member}/>)}</div> : <p className="empty-state">Only the hotel owner can change staff roles.</p>}</section>
+      <section className="panel"><div className="panel-heading"><div><strong>Team roles</strong><small>Role changes take effect immediately.</small></div></div>{role === "owner" ? <div className="admin-list">{members.filter(member => member.active).map(member => <div key={member.userId}><MemberName organizationId={organizationId} member={member}/><MemberRole organizationId={organizationId} member={member}/></div>)}</div> : <p className="empty-state">Only the hotel owner can change staff roles.</p>}</section>
     </div></>;
 }
-function PropertyForm({ organizationId }: { organizationId: string }) {
+export function PropertyForm({ organizationId }: { organizationId: string }) {
   const [state, action, pending] = useActionState(createPropertyAction, {} as ActionState);
   return <form action={action} className="reservation-form admin-form"><input type="hidden" name="organization_id" value={organizationId}/>
     <label>Property name<input name="name" required minLength={2} placeholder="e.g. Marina Annex"/></label><label>Address <span className="optional">Optional</span><input name="address" placeholder="Street, Calabar"/></label>
@@ -29,6 +28,7 @@ function InviteForm({ organizationId, propertyId, propertyName }: { organization
   const [link, setLink] = useState(""); const [copied, setCopied] = useState(false);
   useEffect(() => { if (state.result) setLink(`${window.location.origin}/team/accept?token=${encodeURIComponent(state.result)}`); }, [state.result]);
   return <form action={action} className="reservation-form admin-form"><input type="hidden" name="organization_id" value={organizationId}/><input type="hidden" name="property_id" value={propertyId}/>
+    <label>Full name<input name="full_name" required minLength={2} maxLength={120} placeholder="Staff member’s full name"/></label>
     <label>Email address<input name="email" type="email" autoComplete="off" required placeholder="staff@example.com"/></label>
     <label>Property access<output className="admin-property-output">{propertyName}</output></label>
     <label>Role<select name="role" defaultValue="front_desk"><option value="manager">Manager</option><option value="front_desk">Front desk</option><option value="accountant">Accountant</option><option value="housekeeping">Housekeeping</option></select></label>
@@ -38,5 +38,11 @@ function InviteForm({ organizationId, propertyId, propertyName }: { organization
 }
 function MemberRole({ organizationId, member }: { organizationId: string; member: Member }) {
   const [state, action, pending] = useActionState(changeMemberRoleAction, {} as ActionState);
+  if (member.role === "owner") return <div className="admin-list-row"><span>{member.email}</span><strong>Owner</strong></div>;
   return <form action={action} className="admin-list-row member-role-form"><input type="hidden" name="organization_id" value={organizationId}/><input type="hidden" name="user_id" value={member.userId}/><span>{member.email || `Staff · ${member.userId.slice(0,8)}`}</span><select aria-label="Staff role" name="role" defaultValue={member.role}><option value="manager">Manager</option><option value="front_desk">Front desk</option><option value="accountant">Accountant</option><option value="housekeeping">Housekeeping</option></select><button className="button" disabled={pending}>{pending ? "Saving…" : state.success ? "Saved" : "Update"}</button>{state.error && <small className="form-error">{state.error}</small>}</form>;
+}
+
+function MemberName({organizationId,member}:{organizationId:string;member:Member}) {
+ const [state,action,pending]=useActionState(saveStaffNameAction,{} as ActionState);
+ return <form action={action} className="admin-list-row member-role-form"><input type="hidden" name="organization_id" value={organizationId}/><input type="hidden" name="user_id" value={member.userId}/><input aria-label={`Full name for ${member.email}`} name="full_name" defaultValue={member.fullName} minLength={2} maxLength={120} required placeholder="Staff full name"/><button className="button" disabled={pending}>Save name</button>{state.error&&<small className="form-error">{state.error}</small>}</form>;
 }

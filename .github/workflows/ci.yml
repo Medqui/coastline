@@ -20,7 +20,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - run: node --test scripts/read-with-retry.test.cjs
+      - run: node --test scripts/read-with-retry.test.cjs scripts/pms-navigation.test.cjs
       - run: npm run build
   database:
     runs-on: ubuntu-latest
@@ -32,5 +32,8 @@ jobs:
       - run: supabase start
       - run: supabase test db
       - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -v ON_ERROR_STOP=1 -q -f scripts/test-property-configuration.sql
+      - run: psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -v ON_ERROR_STOP=1 -q -f scripts/test-stay-lifecycle.sql
+      - run: psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -v ON_ERROR_STOP=1 -q -f scripts/test-staff-shifts.sql
       - run: python3 scripts/test-migration-replay.py
       - run: python3 scripts/test-booking-concurrency.py

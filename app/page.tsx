@@ -15,6 +15,23 @@ function naira(kobo: number) {
   return `₦${new Intl.NumberFormat("en-NG").format(Math.round(kobo / 100))}`;
 }
 
+// Keep every active stay in operational inventory; only historical records are capped.
+async function loadOperationalStays(client: Awaited<ReturnType<typeof createClient>>, organizationId: string, propertyId: string) {
+  const query = () => client.from("reservations").select("id,status,arrival_date,departure_date,adults,guests(full_name,phone),reservation_rooms(room_id,nightly_rate_kobo,quoted_standard_rate_kobo,pricing_reason,rooms(room_number,room_types(name))),reservation_night_rates(service_date,standard_rate_kobo,charged_rate_kobo,rate_name)").eq("organization_id", organizationId).eq("property_id", propertyId);
+  const firstPage = await query().in("status", ["confirmed", "checked_in"]).order("id").range(0, 499);
+  if (firstPage.error) return { data: null, error: firstPage.error };
+  const rows = [...(firstPage.data ?? [])];
+  let pageLength = firstPage.data?.length ?? 0;
+  for (let offset = 500; pageLength === 500; offset += 500) {
+    const page = await query().in("status", ["confirmed", "checked_in"]).order("id").range(offset, offset + 499);
+    if (page.error) return { data: null, error: page.error };
+    rows.push(...(page.data ?? [])); pageLength = page.data?.length ?? 0;
+  }
+  const history = await query().in("status", ["inquiry", "checked_out", "cancelled", "no_show"]).order("arrival_date", { ascending: false }).limit(100);
+  if (history.error) return { data: null, error: history.error };
+  return { data: [...rows, ...(history.data ?? [])].sort((a,b) => b.arrival_date.localeCompare(a.arrival_date)), error: null };
+}
+
 function HotelLoadNotice({ update = false }: { update?: boolean }) {
   return <main className="setup-page"><section className="setup-card" role="status">
     <div className="eyebrow">Coastline PMS</div>
@@ -43,7 +60,7 @@ async function HotelEntry({ searchParams }: { searchParams: Promise<{ property?:
 
   const { data: memberships, error: membershipError } = await supabase
     .from("organization_memberships")
-    .select("organization_id, role, all_properties")
+    .select("organization_id, role, all_properties, full_name")
     .eq("user_id", user.id)
     .eq("active", true)
     .order("created_at", { ascending: true });
@@ -71,10 +88,7 @@ async function HotelEntry({ searchParams }: { searchParams: Promise<{ property?:
     supabase.from("rooms")
       .select("id,room_number,housekeeping_status,room_types(name,base_rate_kobo)")
       .eq("organization_id", organizationId).eq("property_id", property.id).eq("active", true).order("room_number"),
-    supabase.from("reservations")
-      .select("id,status,arrival_date,departure_date,adults,guests(full_name,phone),reservation_rooms(room_id,nightly_rate_kobo,quoted_standard_rate_kobo,pricing_reason,rooms(room_number,room_types(name))),reservation_night_rates(service_date,standard_rate_kobo,charged_rate_kobo,rate_name)")
-      .eq("organization_id", organizationId).eq("property_id", property.id)
-      .order("arrival_date", { ascending: false }).limit(100),
+    loadOperationalStays(supabase, organizationId, property.id),
     supabase.from("folios").select("id,reservation_id,status").eq("organization_id",organizationId).eq("property_id",property.id).limit(200),
     supabase.from("folio_items").select("id,folio_id,item_type,description,service_date,total_amount_kobo")
       .eq("organization_id",organizationId).eq("property_id",property.id).order("created_at", { ascending: true }).limit(500),
@@ -172,15 +186,16 @@ async function HotelEntry({ searchParams }: { searchParams: Promise<{ property?:
   }
 
   const { data: teamRows } = memberships[0].role === "owner"
-    ? await supabase.rpc("get_team_members", { p_organization_id: organizationId })
+    ? await supabase.rpc("get_staff_directory", { p_organization_id: organizationId })
     : { data: [] };
   const context: HotelContext = {
     organizationId,
+    userId: user.id,
     properties: accessibleProperties.map(item => ({ id: item.id, name: item.name })),
-    teamMembers: (teamRows ?? []).map((item: { user_id: string; email: string | null; role: string; active: boolean }) => ({ userId: item.user_id, email: item.email ?? "", role: item.role, active: item.active })),
+    teamMembers: (teamRows ?? []).map((item: { user_id: string; email: string | null; full_name: string | null; role: string; active: boolean }) => ({ userId: item.user_id, email: item.email ?? "", fullName: item.full_name ?? "", role: item.role, active: item.active })),
     propertyId: property.id,
     propertyName: property.name,
-    ownerName: user.user_metadata.full_name || user.email?.split("@")[0] || "Hotel team",
+    ownerName: memberships[0].full_name || user.user_metadata.full_name || user.email?.split("@")[0] || "Hotel team",
     role: memberships[0].role,
     expenses: (expenseData ?? []).map(expense => ({ id: expense.id, date: expense.expense_date,
       vendor: expense.vendor ?? "", description: expense.description, amountKobo: Number(expense.amount_kobo), receiptPath: expense.receipt_path ?? "" })),

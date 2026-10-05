@@ -132,3 +132,18 @@ print(json.dumps({'scenario': 'same supplier payment submitted concurrently', 's
 assert checked(f"select count(*) from (select j.id from public.journals j join public.journal_lines l on l.journal_id=j.id where j.property_id='{property_id}' and j.status='posted' group by j.id having sum(l.debit_kobo)<>sum(l.credit_kobo)) x;") == '0'
 assert checked(f"select sum(l.debit_kobo-l.credit_kobo) from public.journal_lines l join public.journals j on j.id=l.journal_id join public.accounts a on a.id=l.account_id where j.property_id='{property_id}' and j.status='posted' and a.code='5010';") == '30000'
 print(json.dumps({'scenario': 'accounting integrity after concurrent writes', 'unbalanced_journals': 0, 'recognized_supplier_expense_kobo': 30000}))
+
+# Quantity inventory also serializes competing issues and repeated receipts.
+stock_result = checked(f"begin; {auth_sql} select public.save_stock_item('{property_id}','Race water','bottle',5); commit;")
+stock_id = str(uuid.UUID(stock_result.splitlines()[-1]))
+checked(f"begin; {auth_sql} select public.record_stock_movement('{stock_id}',10,'Opening quantity','stock-opening'); commit;")
+results = race([f"select public.record_stock_movement('{stock_id}',-7,'Concurrent issue','stock-issue-a');", f"select public.record_stock_movement('{stock_id}',-7,'Concurrent issue','stock-issue-b');"])
+assert sorted(r.returncode == 0 for r in results) == [False,True], [(r.returncode,r.stderr) for r in results]
+assert 'cannot exceed' in next(r.stderr for r in results if r.returncode)
+assert checked(f"select on_hand::integer from public.stock_balances where id='{stock_id}';") == '3'
+print(json.dumps({'scenario':'concurrent stock issues cannot overdraw','successful_issues':1,'rejected_overdraws':1,'on_hand':3}))
+results = race([f"select public.record_stock_movement('{stock_id}',2,'Repeated receiving','stock-repeat');"] * 2)
+assert all(r.returncode == 0 for r in results), [(r.returncode,r.stderr) for r in results]
+assert checked(f"select count(*) from public.stock_movements where property_id='{property_id}' and idempotency_key='stock-repeat';") == '1'
+assert checked(f"select on_hand::integer from public.stock_balances where id='{stock_id}';") == '5'
+print(json.dumps({'scenario':'concurrent repeated stock receipt','successful_requests':2,'recorded_movements':1,'on_hand':5}))

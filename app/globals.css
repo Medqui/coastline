@@ -69,3 +69,20 @@
 .cashier-panel .maintenance-order { margin-bottom: 10px; padding: 13px; }
 .cashier-panel .maintenance-order p { margin: 6px 0 8px; font-size: 10px; color: var(--muted); }
 @media(max-width:760px) { .cashier-layout { grid-template-columns: 1fr; } }
+
+/* MVP modules extend the existing Coastline design tokens. */
+.module-tabs { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 18px; }
+.live-room-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:16px; margin:20px 0; }
+.live-room-grid .room-card { margin:0; }
+.settings-content { margin-top:18px; }
+.settings-content .reservation-form { max-width:680px; }
+.settings-content .panel { margin-bottom:18px; }
+.settings-content .reservation-form label { margin-bottom:12px; }
+.settings-content .panel > .reservation-form { padding:20px; }
+.sidebar { overflow-y:auto; }
+.side-nav .nav-item { flex-shrink:0; }
+
+.staff-shift-panel { margin-bottom: 24px; padding: 20px; }
+.staff-shift-panel details { margin-top: 14px; }
+.staff-shift-panel summary { cursor: pointer; font-weight: 600; }
+.staff-shift-panel .statement-summary { margin: 16px 0; }

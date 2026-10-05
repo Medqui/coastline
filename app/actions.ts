@@ -420,9 +420,9 @@ export async function createTeamInvitationAction(_previous: ActionState, formDat
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Sign in to invite a team member." };
-  const { data: token, error } = await supabase.rpc("create_team_invitation", {
+  const { data: token, error } = await supabase.rpc("create_named_team_invitation", {
     p_organization_id: text(formData, "organization_id"), p_property_id: text(formData, "property_id"),
-    p_email: text(formData, "email"), p_role: text(formData, "role"),
+    p_email: text(formData, "email"), p_role: text(formData, "role"), p_full_name: text(formData,"full_name"),
   });
   if (error) return { error: friendlyError(error.message) };
   revalidatePath("/");
@@ -599,4 +599,36 @@ export async function flagBankStatementExceptionAction(_previous: ActionState, f
 
 export async function voidBankStatementMatchAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
   return runFinanceAction("void_bank_statement_match",{p_match_id:text(formData,"match_id"),p_reason:text(formData,"reason")});
+}
+
+export async function savePropertyConfigurationAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  const client = await createClient();
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) return { error: "Sign in to configure your hotel." };
+  const values: Record<string, string | number | boolean | null> = {};
+  for (const key of ["name", "room_number", "room_type_id", "floor_label", "address", "city", "check_in_time", "check_out_time", "clearing_account_code"]) values[key] = text(formData, key);
+  values.active = formData.get("active") === "on";
+  values.max_occupancy = Number(text(formData, "max_occupancy")) || 2;
+  values.base_rate_kobo = nairaToKobo(text(formData, "rate"));
+  values.rate_basis_points = nairaToKobo(text(formData, "percent"));
+  const { error } = await client.rpc("save_property_configuration", { p_property_id: text(formData, "property_id"), p_kind: text(formData, "kind"), p_id: text(formData, "id") || null, p_values: values });
+  if (error) return { error: friendlyError(error.message) };
+  revalidatePath("/"); return { success: true };
+}
+
+export async function saveStockItemAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  return runFinanceAction("save_stock_item", { p_property_id: text(formData, "property_id"), p_name: text(formData, "name"), p_unit: text(formData, "unit"), p_par_level: text(formData, "par_level") });
+}
+export async function recordStockMovementAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  return runFinanceAction("record_stock_movement", { p_item_id: text(formData, "item_id"), p_quantity: text(formData, "quantity"), p_reason: text(formData, "reason"), p_idempotency_key: text(formData, "idempotency_key") });
+}
+
+export async function saveStaffNameAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+ return runFinanceAction("save_staff_name",{p_organization_id:text(formData,"organization_id"),p_full_name:text(formData,"full_name"),p_user_id:text(formData,"user_id")||null});
+}
+export async function startStaffShiftAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+ return runFinanceAction("start_staff_shift",{p_property_id:text(formData,"property_id")});
+}
+export async function endStaffShiftAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+ return runFinanceAction("end_staff_shift",{p_shift_id:text(formData,"shift_id"),p_handover_note:text(formData,"handover_note")});
 }
