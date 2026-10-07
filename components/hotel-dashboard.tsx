@@ -28,6 +28,7 @@ import { SupplierAccountsPanel } from "@/components/supplier-accounts-panel";
 import { AvailabilityCalendar } from "@/components/availability-calendar";
 import { LogoutButton } from "@/components/logout-button";
 import { CashierControls } from "@/components/cashier-controls";
+import { OwnerDashboard } from "@/components/owner-dashboard";
 
 export type LiveRoom = { id: string; number: string; status: string; type: string; rateKobo: number; maintenanceBlocked?: boolean };
 export type LiveStay = {
@@ -57,6 +58,12 @@ export type HotelContext = {
     paymentsKobo: number; outstandingKobo: number; roomNights: number; monthStart: string;
     entries: { id: string; date: string; memo: string; source: string; amountKobo: number }[] };
 };
+type PreviewRole = "owner" | "manager" | "front_desk" | "accountant" | "housekeeping";
+const previewRoles: { value: PreviewRole; label: string }[] = [
+  { value: "owner", label: "Owner" }, { value: "manager", label: "Manager" },
+  { value: "front_desk", label: "Front desk" }, { value: "accountant", label: "Accountant" },
+  { value: "housekeeping", label: "Housekeeping" },
+];
 const nav: { label: Screen; icon: typeof LayoutDashboard }[] = [
   { label: "Dashboard", icon: LayoutDashboard }, { label: "Reservations", icon: CalendarDays },
   { label: "Front Desk", icon: DoorOpen }, { label: "Rooms", icon: BedDouble },
@@ -94,6 +101,8 @@ function downloadCsv(filename: string, headers: string[], rows: (string | number
 
 export function HotelDashboard({ context, dayLabel, dateStamp }: { context?: HotelContext; dayLabel: string; dateStamp: string }) {
   const [screen, setScreen] = useState<Screen>("Dashboard");
+  const [viewAsRole, setViewAsRole] = useState<PreviewRole>("owner");
+  const [shiftWorkspaceOpen, setShiftWorkspaceOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -104,14 +113,18 @@ export function HotelDashboard({ context, dayLabel, dateStamp }: { context?: Hot
   const [closeStayId, setCloseStayId] = useState<string | null>(null);
   const [depositStayId, setDepositStayId] = useState<string | null>(null);
   const live = Boolean(context);
+  const interfaceRole = context?.role === "owner" ? viewAsRole : context?.role;
+  const previewingRole = Boolean(context?.role === "owner" && viewAsRole !== "owner");
+  const viewContext = context && interfaceRole ? { ...context, role: interfaceRole } : context;
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2800); };
   useEffect(() => {
-    const restore = () => setScreen(parseScreen(window.location.hash, context?.role));
+    const restore = () => setScreen(parseScreen(window.location.hash, interfaceRole));
     restore(); window.addEventListener("hashchange", restore); window.addEventListener("popstate", restore);
     return () => { window.removeEventListener("hashchange", restore); window.removeEventListener("popstate", restore); };
-  }, [context?.role]);
+  }, [interfaceRole]);
   const [guestDirectory, setGuestDirectory] = useState(false);
-  const page = (name: Screen) => { if (!canViewScreen(name, context?.role)) return; const hash = `#${screenHash(name)}`; if (window.location.hash !== hash) window.history.pushState(null, "", `${window.location.pathname}${window.location.search}${hash}`); setScreen(name); setMenuOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const page = (name: Screen) => { if (!canViewScreen(name, interfaceRole)) return; const hash = `#${screenHash(name)}`; if (window.location.hash !== hash) window.history.pushState(null, "", `${window.location.pathname}${window.location.search}${hash}`); setScreen(name); setMenuOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const changeViewRole = (role: PreviewRole) => { setViewAsRole(role); setScreen("Dashboard"); if (window.location.hash !== "#dashboard") window.history.pushState(null, "", `${window.location.pathname}${window.location.search}#dashboard`); };
   const propertyName = context?.propertyName ?? "Calabar Seaview Hotel";
   const ownerName = context?.ownerName ?? "Amaka Okon";
   const initials = ownerName.split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase();
@@ -122,33 +135,43 @@ export function HotelDashboard({ context, dayLabel, dateStamp }: { context?: Hot
     <aside className={`sidebar ${menuOpen ? "sidebar-open" : ""}`}>
       <div className="brand"><div className="brand-mark">C</div><div><strong>Coastline</strong><small>HOTEL OPERATIONS</small></div><button className="icon-button close-menu" onClick={() => setMenuOpen(false)} aria-label="Close menu"><X size={18}/></button></div>
       <label className="property-picker"><span className="overline">CURRENT PROPERTY</span><select aria-label="Current property" value={context?.propertyId ?? ""} onChange={event => { if (event.target.value) window.location.href = `/?property=${encodeURIComponent(event.target.value)}`; }} disabled={!context || context.properties.length < 2}>{context?.properties.map(property => <option key={property.id} value={property.id}>{property.name}</option>) ?? <option>{propertyName}</option>}</select><ChevronDown size={15}/></label>
-      <div className="nav-label">WORKSPACE</div><nav className="side-nav" aria-label="Hotel navigation">{nav.filter(item => canViewScreen(item.label, context?.role)).map(({ label, icon: Icon }) => <button key={label} aria-current={screen === label ? "page" : undefined} className={screen === label ? "nav-item active" : "nav-item"} onClick={() => page(label)}><Icon size={18}/><span>{label}</span></button>)}</nav>
-      <div className="sidebar-bottom"><div className="help-card"><Sparkles size={16}/><div><strong>{live ? "First hotel is connected" : "Demo workspace"}</strong><span>{live ? "Reservations save to your Supabase database." : "Connect Supabase when you’re ready to save real stays."}</span></div></div><div className="user-row"><div className="avatar">{initials}</div><div><strong>{ownerName}</strong><small>{context?.role.replaceAll("_"," ") ?? "Hotel owner"}</small></div>{live && <LogoutButton compact/>}</div></div>
+      <div className="nav-label">WORKSPACE</div><nav className="side-nav" aria-label="Hotel navigation">{nav.filter(item => canViewScreen(item.label, interfaceRole)).map(({ label, icon: Icon }) => <button key={label} aria-current={screen === label ? "page" : undefined} className={screen === label ? "nav-item active" : "nav-item"} onClick={() => page(label)}><Icon size={18}/><span>{label}</span></button>)}</nav>
+      <div className="sidebar-bottom"><div className="help-card"><Sparkles size={16}/><div><strong>{live ? "First hotel is connected" : "Demo workspace"}</strong><span>{live ? "Reservations save to your Supabase database." : "Connect Supabase when you’re ready to save real stays."}</span></div></div><div className="user-row"><div className="avatar">{initials}</div><div><strong>{ownerName}</strong><small>{interfaceRole?.replaceAll("_"," ") ?? "Hotel owner"}</small></div>{live && <LogoutButton compact/>}</div></div>
     </aside>
     {menuOpen && <button className="scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)}/>}
     <main className="main-area">
-      <header className="topbar"><button className="icon-button menu-button" aria-label="Open navigation" onClick={() => setMenuOpen(true)}><Menu size={19}/></button><div className="breadcrumb">{propertyName} <span>/</span><strong>{screen}</strong></div><div className="top-actions"><span className="current-date">{dayLabel}</span><button className="icon-button notification" aria-label="Notifications" onClick={() => notify("You’re all caught up.")}><Bell size={18}/><i/></button><div className="avatar">{initials}</div></div></header>
-      <div className="page-content">
-        {context && <StaffShiftPanel key={context.propertyId} organizationId={context.organizationId} propertyId={context.propertyId} userId={context.userId} name={context.ownerName} role={context.role}/>}
-        {screen === "Dashboard" && <Overview dayLabel={dayLabel} dateStamp={dateStamp} page={page} notify={notify} context={context}/>}
-        {screen === "Front Desk" && <><div className="module-tabs"><Button onClick={() => setGuestDirectory(false)} className={!guestDirectory ? "button-primary" : ""}>Today’s stays</Button><Button onClick={() => setGuestDirectory(true)} className={guestDirectory ? "button-primary" : ""}>Guest directory</Button></div>{guestDirectory ? <Guests query={query} setQuery={setQuery} notify={notify} context={context}/> : <FrontDesk dateStamp={dateStamp} notify={notify} context={context} openReservation={openReservation} openFolio={setFolioStayId} page={page}/>}</>}
-        {screen === "Reservations" && <Reservations dateStamp={dateStamp} query={query} setQuery={setQuery} rows={visibleBookings} notify={notify} context={context} openReservation={openReservation} openClose={setCloseStayId} openFolio={setFolioStayId} openDeposit={setDepositStayId}/>}
-        {screen === "Rooms" && <Rooms dateStamp={dateStamp} context={context} openReservation={openReservation} openFolio={setFolioStayId} page={page}/>}
-        {screen === "Housekeeping" && <Housekeeping context={context}/>}
-        {screen === "POS" && <POS context={context} openFolio={setFolioStayId}/>}
-        {screen === "Inventory" && <InventoryPanel context={context}/>}
-        {screen === "Reports" && <Reports context={context}/>}
-        {screen === "Accounting" && <Finance notify={notify} context={context}/>}
-        {screen === "Staff" && context && <AdminPanel organizationId={context.organizationId} propertyId={context.propertyId} propertyName={context.propertyName} properties={context.properties} members={context.teamMembers} role={context.role}/>}
-        {screen === "Staff" && !context && <PageHeading eyebrow="HOTEL TEAM" title="Staff" description="Connect your hotel to invite staff and manage property access."/>}
-        {screen === "Settings" && <PropertySettings context={context}/>}
+      <header className="topbar"><button className="icon-button menu-button" aria-label="Open navigation" onClick={() => setMenuOpen(true)}><Menu size={19}/></button><div className="breadcrumb">{propertyName} <span>/</span><strong>{screen}</strong></div><div className="top-actions"><span className="current-date">{dayLabel}</span>{context?.role === "owner" && <label className="view-as-control"><span>VIEW AS</span><select aria-label="Preview interface as role" value={viewAsRole} onChange={event => changeViewRole(event.target.value as PreviewRole)}>{previewRoles.map(role => <option key={role.value} value={role.value}>{role.label}</option>)}</select></label>}<button className="icon-button notification" aria-label="Notifications" onClick={() => notify("You’re all caught up.")}><Bell size={18}/><i/></button><div className="avatar">{initials}</div></div></header>
+      <div className={`page-content ${previewingRole ? "role-previewing" : ""}`}>
+        {previewingRole && <div className="role-preview-banner" role="status"><strong>Interface preview: {previewRoles.find(role => role.value === viewAsRole)?.label}</strong><span>Read-only preview. Your owner permissions and account are unchanged.</span></div>}
+        {viewContext && <div className="shift-launcher">
+          <div>
+            <strong>Shift workspace</strong>
+            <small>Optional shift handovers and duty tracking. You can continue working without starting a shift.</small>
+          </div>
+          <button className="button" onClick={() => setShiftWorkspaceOpen(open => !open)} aria-expanded={shiftWorkspaceOpen} aria-controls="shift-workspace">
+            {shiftWorkspaceOpen ? "Hide shift workspace" : "Open shift workspace"}
+          </button>
+        </div>}
+        {viewContext && shiftWorkspaceOpen && <div id="shift-workspace"><StaffShiftPanel key={viewContext.propertyId} organizationId={viewContext.organizationId} propertyId={viewContext.propertyId} userId={viewContext.userId} name={viewContext.ownerName} role={viewContext.role}/></div>}
+        {screen === "Dashboard" && <Overview dayLabel={dayLabel} dateStamp={dateStamp} page={page} notify={notify} context={viewContext}/>}
+        {screen === "Front Desk" && <><div className="module-tabs"><Button onClick={() => setGuestDirectory(false)} className={!guestDirectory ? "button-primary" : ""}>Today’s stays</Button><Button onClick={() => setGuestDirectory(true)} className={guestDirectory ? "button-primary" : ""}>Guest directory</Button></div>{guestDirectory ? <Guests query={query} setQuery={setQuery} notify={notify} context={viewContext}/> : <FrontDesk dateStamp={dateStamp} notify={notify} context={viewContext} openReservation={openReservation} openFolio={setFolioStayId} page={page}/>}</>}
+        {screen === "Reservations" && <Reservations dateStamp={dateStamp} query={query} setQuery={setQuery} rows={visibleBookings} notify={notify} context={viewContext} openReservation={openReservation} openClose={setCloseStayId} openFolio={setFolioStayId} openDeposit={setDepositStayId}/>}
+        {screen === "Rooms" && <Rooms dateStamp={dateStamp} context={viewContext} openReservation={openReservation} openFolio={setFolioStayId} page={page}/>}
+        {screen === "Housekeeping" && <Housekeeping context={viewContext}/>}
+        {screen === "POS" && <POS context={viewContext} openFolio={setFolioStayId}/>}
+        {screen === "Inventory" && <InventoryPanel context={viewContext}/>}
+        {screen === "Reports" && <Reports context={viewContext}/>}
+        {screen === "Accounting" && <Finance notify={notify} context={viewContext}/>}
+        {screen === "Staff" && viewContext && <AdminPanel organizationId={viewContext.organizationId} propertyId={viewContext.propertyId} propertyName={viewContext.propertyName} properties={viewContext.properties} members={viewContext.teamMembers} role={viewContext.role}/>}
+        {screen === "Staff" && !viewContext && <PageHeading eyebrow="HOTEL TEAM" title="Staff" description="Connect your hotel to invite staff and manage property access."/>}
+        {screen === "Settings" && <PropertySettings context={viewContext}/>}
         <footer className="page-footer"><span>Coastline PMS <i>·</i> {live ? "Connected workspace" : "MVP demo preview"}</span><span>Amounts shown in Nigerian naira</span></footer>
       </div>
     </main>
-    {reservationOpen && context && <ReservationDialog organizationId={context.organizationId} propertyId={context.propertyId} role={context.role} initialArrival={reservationArrival} initialRoomId={reservationRoomId} onClose={() => { setReservationOpen(false); setReservationArrival(undefined); setReservationRoomId(undefined); }}/>}
-    {folioStayId && context && <FolioDialog stay={context.stays.find(stay => stay.id === folioStayId)!} folio={context.folios.find(folio => folio.reservationId === folioStayId)} methods={context.paymentMethods} departments={context.departments} deposits={context.deposits} payments={context.payments} role={context.role} onClose={() => setFolioStayId(null)}/>}
-    {closeStayId && context && <CloseReservationDialog stay={context.stays.find(stay => stay.id === closeStayId)!} onClose={() => setCloseStayId(null)}/>}
-    {depositStayId && context && <DepositDialog stay={context.stays.find(stay => stay.id === depositStayId)!} deposits={context.deposits.filter(deposit => deposit.folioId === context.folios.find(folio => folio.reservationId === depositStayId)?.id)} methods={context.paymentMethods} role={context.role} onClose={() => setDepositStayId(null)}/>}
+    {reservationOpen && viewContext && <ReservationDialog organizationId={viewContext.organizationId} propertyId={viewContext.propertyId} role={viewContext.role} initialArrival={reservationArrival} initialRoomId={reservationRoomId} onClose={() => { setReservationOpen(false); setReservationArrival(undefined); setReservationRoomId(undefined); }}/>}
+    {folioStayId && viewContext && <FolioDialog stay={viewContext.stays.find(stay => stay.id === folioStayId)!} folio={viewContext.folios.find(folio => folio.reservationId === folioStayId)} methods={viewContext.paymentMethods} departments={viewContext.departments} deposits={viewContext.deposits} payments={viewContext.payments} role={viewContext.role} onClose={() => setFolioStayId(null)}/>}
+    {closeStayId && viewContext && <CloseReservationDialog stay={viewContext.stays.find(stay => stay.id === closeStayId)!} onClose={() => setCloseStayId(null)}/>}
+    {depositStayId && viewContext && <DepositDialog stay={viewContext.stays.find(stay => stay.id === depositStayId)!} deposits={viewContext.deposits.filter(deposit => deposit.folioId === viewContext.folios.find(folio => folio.reservationId === depositStayId)?.id)} methods={viewContext.paymentMethods} role={viewContext.role} onClose={() => setDepositStayId(null)}/>}
     {toast && <div className="toast"><Check size={16}/>{toast}</div>}
   </div>;
 }
@@ -159,6 +182,7 @@ function Metric({ label, value, foot, icon: Icon, tone = "green" }: { label: str
 function CardHeading({ title, note, action }: { title: string; note?: string; action?: React.ReactNode }) { return <div className="card-heading"><div><strong>{title}</strong>{note && <small>{note}</small>}</div>{action}</div>; }
 function Overview({ page, notify, context, dayLabel, dateStamp }: { dayLabel: string; dateStamp: string; page: (name: Screen) => void; notify: (m: string) => void; context?: HotelContext }) {
   if (context) {
+    if (context.role === "owner") return <OwnerDashboard context={context} dateStamp={dateStamp} navigate={page}/>;
     const occupied = context.stays.filter(stay => stay.status === "checked_in").length;
     const arrivals = context.stays.filter(stay => stay.status === "confirmed" && stay.arrivalDate === dateStamp).length;
     const usable = context.rooms.filter(room => room.status !== "out_of_order" && !room.maintenanceBlocked).length;
