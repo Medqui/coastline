@@ -147,3 +147,20 @@ assert all(r.returncode == 0 for r in results), [(r.returncode,r.stderr) for r i
 assert checked(f"select count(*) from public.stock_movements where property_id='{property_id}' and idempotency_key='stock-repeat';") == '1'
 assert checked(f"select on_hand::integer from public.stock_balances where id='{stock_id}';") == '5'
 print(json.dumps({'scenario':'concurrent repeated stock receipt','successful_requests':2,'recorded_movements':1,'on_hand':5}))
+
+# Enforce seat and property limits under simultaneous requests, using this disposable fixture.
+checked(f"update public.saas_subscriptions set plan_code='starter' where organization_id='{organization_id}';")
+for index in range(3):
+    checked(f"begin; {auth_sql} select public.create_team_invitation('{organization_id}','{property_id}','reserved-{index}@test.local','front_desk'); commit;")
+results = race([f"select public.create_team_invitation('{organization_id}','{property_id}','last-seat-{index}@test.local','front_desk');" for index in range(2)])
+assert sorted(r.returncode == 0 for r in results) == [False, True], [(r.returncode,r.stderr) for r in results]
+assert 'staff limit' in next(r.stderr for r in results if r.returncode)
+assert checked(f"select count(distinct email) from public.team_invitations where organization_id='{organization_id}' and accepted_at is null;") == '4'
+print(json.dumps({'scenario':'concurrent staff invitations at Starter capacity','successful_invitations':1,'rejected_over_capacity':1,'reserved_staff_seats_including_owner':5}))
+capacity_org=str(uuid.uuid4())
+checked(f"insert into public.organizations(id,name,slug) values('{capacity_org}','Property capacity test','capacity-{capacity_org}'); insert into public.organization_memberships(organization_id,user_id,role) values('{capacity_org}','{user_id}','owner');")
+results = race([f"select public.create_property('{capacity_org}','Concurrent property {index}',null,1,100000);" for index in range(2)])
+assert sorted(r.returncode == 0 for r in results) == [False, True], [(r.returncode,r.stderr) for r in results]
+assert 'hotel limit' in next(r.stderr for r in results if r.returncode)
+assert checked(f"select count(*) from public.properties where organization_id='{capacity_org}';") == '1'
+print(json.dumps({'scenario':'concurrent creation of first Business property','successful_properties':1,'rejected_over_capacity':1,'stored_properties':1}))

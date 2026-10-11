@@ -7,6 +7,8 @@ select set_config('request.jwt.claims','{"sub":"19000000-0000-4000-8000-00000000
 create temp table da_hotel as select * from public.setup_hotel('Department accounting tests','Department property',null,1,100000);
 create temp table da_ids(kind text primary key,id uuid);
 insert into da_ids values('other-property',gen_random_uuid());
+-- This fixture exercises a hotel group, so assign its multi-property plan.
+update public.saas_subscriptions set plan_code='group';
 insert into public.properties(id,organization_id,name) select i.id,h.organization_id,'Other department property' from da_hotel h,da_ids i where i.kind='other-property';
 insert into da_ids select 'foreign-dept',id from public.departments where property_id=(select id from da_ids where kind='other-property') and code='bar';
 grant select on da_hotel to authenticated;

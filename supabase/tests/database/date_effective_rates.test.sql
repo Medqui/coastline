@@ -9,6 +9,8 @@ create temp table rate_rooms as select r.id,r.room_type_id,r.room_number from pu
 create temp table rate_periods(kind text primary key,id uuid);
 create temp table rate_bookings(kind text primary key,id uuid);
 create temp table rate_review(quote jsonb);
+-- This fixture exercises a hotel group, so assign its multi-property plan.
+update public.saas_subscriptions set plan_code='group';
 create temp table rate_other_property as select public.create_property(organization_id,'Other property',null,1,1000000) as id from rate_hotel;
 create temp table rate_other_room as select r.id,r.room_type_id from public.rooms r join rate_other_property p on p.id=r.property_id;
 grant select on rate_hotel,rate_rooms,rate_other_property,rate_other_room to authenticated;

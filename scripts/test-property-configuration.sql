@@ -13,6 +13,8 @@ end$$;
 insert into auth.users(id,email) values('16000000-0000-4000-8000-000000000001','configuration-owner@test.local'),('16000000-0000-4000-8000-000000000002','configuration-staff@test.local');
 select set_config('request.jwt.claim.sub','16000000-0000-4000-8000-000000000001',true);
 create temp table config_hotel as select * from public.setup_hotel('Configuration tests','Property A',null,2,100000);
+-- This fixture exercises a hotel group, so assign its multi-property plan.
+update public.saas_subscriptions set plan_code='group';
 create temp table config_other as select public.create_property(organization_id,'Property B',null,1,100000) as id from config_hotel;
 create temp table config_ids(kind text primary key,id uuid);
 grant select on config_hotel,config_other to authenticated;

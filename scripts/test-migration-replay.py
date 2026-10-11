@@ -1,6 +1,6 @@
 """Verify populated migration replays on an empty disposable local database.
 
-Requires migrations 000–015. All fixture and replay operations are rolled back.
+Requires migrations 000–022. All fixture and replay operations are rolled back.
 Refuses nonlocal databases and databases containing hotel organizations.
 """
 import os
@@ -38,6 +38,14 @@ create temp table replay_payment as select public.pay_supplier_bill(b.id,m.id,cu
 select public.reverse_supplier_payment(id,current_date,'Transfer was returned') from replay_payment;
 select public.report_maintenance(r.id,'Preserved repair',null,'normal',false,'replay-maintenance') from public.rooms r where r.room_number='102';
 update public.departments set name='Hotel bar',active=false where code='bar';
+-- Platform receipts and custom pricing must also survive replay unchanged.
+insert into public.saas_platform_admins(user_id) values('{user}');
+select public.record_subscription_receipt(gen_random_uuid(),organization_id,'business','payment',null,3500000,
+ (now() at time zone 'Africa/Lagos')::date,'bank_transfer','replay-subscription-receipt','Preserved subscription payment') from replay_hotel;
+update public.saas_plan_prices set monthly_price_kobo=3900000 where plan_code='business';
+-- Read-only hotel records must survive database-administrator maintenance too.
+update public.saas_subscriptions set status='expired' where organization_id=(select organization_id from replay_hotel);
+select set_config('request.jwt.claim.sub','',true);
 create function pg_temp.hotel_snapshot() returns jsonb language plpgsql as $snapshot$
 declare t record; v jsonb; result jsonb:='{{}}'::jsonb;
 begin

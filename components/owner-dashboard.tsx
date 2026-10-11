@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { ArrowDownToLine, ArrowRight, BarChart3, BedDouble, Building2, CalendarDays, ChevronDown, CircleDollarSign, LoaderCircle, Percent, Plus, RefreshCw, Users, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { readWithRetry } from "@/lib/supabase/read-with-retry";
+import { hasFeature } from "@/lib/saas/types";
+import { FeatureGate } from "@/components/feature-gate";
 import type { HotelContext } from "@/components/hotel-dashboard";
 import { OccupancyTrend, RoomDistribution, type OccupancyPoint, type RoomTypeCount } from "@/components/dashboard-visuals";
 
@@ -45,7 +47,7 @@ function sumBy(rows: { name: string; amountKobo: number }[]) {
   return [...totals.entries()].map(([name, amountKobo]) => ({ name, amountKobo })).sort((a, b) => b.amountKobo - a.amountKobo);
 }
 
-async function loadMetrics(propertyId: string, from: string, to: string, includeAging: boolean): Promise<Metrics> {
+async function loadMetrics(propertyId: string, from: string, to: string, includeAging: boolean, includeAdvanced: boolean): Promise<Metrics> {
   const db = createClient();
   const [reservationResult, folioResult, itemResult, roomResult, pnlResult, departmentResult, agingResult, payablesResult, expenseResult] = await Promise.all([
     readWithRetry(() => db.from("reservations").select("id,status,source,arrival_date,departure_date,created_at,reservation_rooms(room_id,nightly_rate_kobo,rooms(room_types(name)))").eq("property_id", propertyId).order("arrival_date", { ascending: true }).limit(5000)),
@@ -53,7 +55,7 @@ async function loadMetrics(propertyId: string, from: string, to: string, include
     readWithRetry(() => db.from("folio_items").select("folio_id,item_type,total_amount_kobo,service_date").eq("property_id", propertyId).gte("service_date", from).lte("service_date", to).limit(10000)),
     readWithRetry(() => db.from("rooms").select("id,active,room_types(name)").eq("property_id", propertyId)),
     readWithRetry(() => db.rpc("get_profit_and_loss", { p_property_id: propertyId, p_from: from, p_to: to })),
-    readWithRetry(() => db.rpc("get_department_profit_and_loss", { p_property_id: propertyId, p_from: from, p_to: to })),
+    includeAdvanced ? readWithRetry(() => db.rpc("get_department_profit_and_loss", { p_property_id: propertyId, p_from: from, p_to: to })) : Promise.resolve({ data: [], error: null }),
     includeAging ? readWithRetry(() => db.rpc("get_guest_receivables_summary", { p_property_id: propertyId, p_as_of: to })) : Promise.resolve({ data: [], error: null }),
     includeAging ? readWithRetry(() => db.rpc("get_supplier_payables_summary", { p_property_id: propertyId, p_as_of: to })) : Promise.resolve({ data: [], error: null }),
     readWithRetry(() => db.from("expenses").select("amount_kobo").eq("property_id", propertyId).eq("status", "posted").gte("expense_date", from).lte("expense_date", to).limit(5000)),
@@ -149,6 +151,8 @@ function AgingCard({ title, values, labels }: { title: string; values?: number[]
 }
 
 export function OwnerDashboard({ context, dateStamp, navigate, openReservation }: { context: HotelContext; dateStamp: string; navigate: Navigate; openReservation: () => void }) {
+  const advanced = hasFeature(context.subscription, "advanced_reports");
+  const multiProperty = hasFeature(context.subscription, "multi_property");
   const defaultFrom = `${dateStamp.slice(0, 7)}-01`;
   const [from, setFrom] = useState(defaultFrom); const [to, setTo] = useState(dateStamp);
   const [period, setPeriod] = useState("month");
@@ -169,11 +173,11 @@ export function OwnerDashboard({ context, dateStamp, navigate, openReservation }
     let active = true;
     if (!from || !to || to < from) { setError("Choose a valid dashboard period."); setLoading(false); return; }
     setLoading(true); setError("");
-    Promise.all([loadMetrics(property.id, from, to, true), ...context.properties.map(item => loadMetrics(item.id, from, to, false).then(metrics => ({ property: item, metrics })))])
+    Promise.all([loadMetrics(property.id, from, to, advanced, advanced), ...(multiProperty ? context.properties : []).map(item => loadMetrics(item.id, from, to, false, advanced).then(metrics => ({ property: item, metrics })))])
       .then(([current, ...others]) => { if (!active) return; setData({ metrics: current as Metrics, propertyId: property.id }); setComparison(others as { property: Property; metrics: Metrics }[]); setLoading(false); })
       .catch(() => { if (active) { setData(undefined); setComparison([]); setLoading(false); setError("Owner dashboard data could not be loaded. Try refreshing the dashboard."); } });
     return () => { active = false; };
-  }, [context.properties, from, to, property.id, refresh]);
+  }, [context.properties, from, to, property.id, refresh, advanced, multiProperty]);
   const metrics = data?.propertyId === property.id ? data.metrics : undefined;
   const exportCsv = () => {
     if (!metrics) return;
@@ -192,12 +196,12 @@ export function OwnerDashboard({ context, dateStamp, navigate, openReservation }
     </>}
     <div className="dashboard-main-grid dashboard-today-grid"><section className="panel"><div className="card-heading"><div><strong>Today’s arrivals & departures</strong><small>{arrivals} arrivals · {departures} departures due</small></div><button className="text-button" onClick={() => navigate("Front Desk")}>Front desk<ArrowRight size={15}/></button></div>{todayStays.length ? <div className="table-wrap"><table><thead><tr><th>Guest</th><th>Room</th><th>Stay dates</th><th>Status</th></tr></thead><tbody>{todayStays.slice(0, 5).map(stay => <tr key={stay.id}><td><span className="guest-name"><i>{stay.initials}</i>{stay.guest}</span></td><td>{stay.room}</td><td>{dateLabel(stay.arrivalDate)} – {dateLabel(stay.departureDate)}</td><td><span className={`status-pill ${stay.status === "confirmed" ? "green-pill" : "amber-pill"}`}>{stay.status === "confirmed" ? "Arriving" : "Due out"}</span></td></tr>)}</tbody></table>{todayStays.length > 5 && <button className="text-button dashboard-view-all" onClick={() => navigate("Front Desk")}>View all {todayStays.length} stays<ArrowRight size={14}/></button>}</div> : <p className="empty-state">No arrivals or departures due today.</p>}</section>
       <section className="panel"><div className="card-heading"><div><strong>Needs attention</strong><small>Quick links to your next tasks</small></div></div><div className="dashboard-task-list"><button onClick={() => navigate("Front Desk")}><span className="dashboard-task-icon"><CalendarDays size={17}/></span><span><strong>Welcome arriving guests</strong><small>{arrivals} reservations ready to review</small></span><ArrowRight size={16}/></button><button onClick={() => navigate("Front Desk")}><span className="dashboard-task-icon amber"><Users size={17}/></span><span><strong>Review departures</strong><small>{departures} guests due to check out</small></span><ArrowRight size={16}/></button><button onClick={() => navigate("Reports")}><span className="dashboard-task-icon"><Wallet size={17}/></span><span><strong>Guest balances</strong><small>{loading ? "Loading balances…" : metrics?.receivables ? `${money(metrics.receivables.outstanding_kobo)} outstanding at period end` : "View the latest balance report"}</small></span><ArrowRight size={16}/></button></div></section></div>
-    {metrics && !loading && <details className="dashboard-details"><summary><span><strong>Detailed performance & reports</strong><small>Forecasts, revenue breakdowns and outstanding balances</small></span><ChevronDown size={18}/></summary><div className="dashboard-details-content">
+    {metrics && !loading && <FeatureGate subscription={context.subscription} feature="advanced_reports" organizationId={context.organizationId}><details className="dashboard-details"><summary><span><strong>Detailed performance & reports</strong><small>Forecasts, revenue breakdowns and outstanding balances</small></span><ChevronDown size={18}/></summary><div className="dashboard-details-content">
       <div className="owner-kpi-grid"><Card label="Forecast occupancy" value={percentage(metrics.forecastOccupancy)} note={`${metrics.forecastRoomNights} booked / in-house nights`} icon={CalendarDays} onClick={() => navigate("Reservations")}/><Card label="Revenue per available room" value={moneyDecimal(metrics.revparKobo)} note="Room revenue ÷ available nights" icon={Percent} onClick={() => navigate("Rooms")}/><Card label="Guest receivables" value={metrics.receivables ? money(metrics.receivables.outstanding_kobo) : "Unavailable"} note="Outstanding as of period end" icon={Users} onClick={() => navigate("Reports")}/><Card label="Supplier payables" value={metrics.payables ? money(metrics.payables.outstanding_kobo) : "Unavailable"} note="Outstanding as of period end" icon={Building2} onClick={() => navigate("Accounting")}/></div>
-      <div className="owner-insight-grid"><section className="owner-detail panel"><div className="panel-heading"><div><strong>Demand and stay quality</strong><small>{property.name} · {from} to {to}</small></div></div><div className="owner-stat-grid"><div><span>Average length of stay</span><b>{metrics.averageStayNights.toFixed(1)} nights</b></div><div><span>Booking lead time</span><b>{metrics.bookingLeadDays.toFixed(1)} days</b></div><div><span>Cancellation rate</span><b>{percentage(metrics.cancellationRate)}</b></div><div><span>No-show rate</span><b>{percentage(metrics.noShowRate)}</b></div><div><span>Available room nights</span><b>{metrics.availableRoomNights}</b></div><div><span>Room revenue</span><b>{money(metrics.roomRevenueKobo)}</b></div></div></section><section className="owner-detail panel"><div className="panel-heading"><div><strong>Property comparison</strong><small>Same date range across accessible properties</small></div></div><div className="table-wrap"><table><thead><tr><th>Property</th><th>Revenue</th><th>Occupancy</th><th>RevPAR</th></tr></thead><tbody>{comparison.map(item => <tr key={item.property.id}><td>{item.property.name}</td><td>{money(item.metrics.revenueKobo)}</td><td>{percentage(item.metrics.actualOccupancy)}</td><td>{moneyDecimal(item.metrics.revparKobo)}</td></tr>)}</tbody></table></div></section></div>
+      <div className="owner-insight-grid"><section className="owner-detail panel"><div className="panel-heading"><div><strong>Demand and stay quality</strong><small>{property.name} · {from} to {to}</small></div></div><div className="owner-stat-grid"><div><span>Average length of stay</span><b>{metrics.averageStayNights.toFixed(1)} nights</b></div><div><span>Booking lead time</span><b>{metrics.bookingLeadDays.toFixed(1)} days</b></div><div><span>Cancellation rate</span><b>{percentage(metrics.cancellationRate)}</b></div><div><span>No-show rate</span><b>{percentage(metrics.noShowRate)}</b></div><div><span>Available room nights</span><b>{metrics.availableRoomNights}</b></div><div><span>Room revenue</span><b>{money(metrics.roomRevenueKobo)}</b></div></div></section><FeatureGate subscription={context.subscription} feature="multi_property" organizationId={context.organizationId}><section className="owner-detail panel"><div className="panel-heading"><div><strong>Property comparison</strong><small>Same date range across accessible properties</small></div></div><div className="table-wrap"><table><thead><tr><th>Property</th><th>Revenue</th><th>Occupancy</th><th>RevPAR</th></tr></thead><tbody>{comparison.map(item => <tr key={item.property.id}><td>{item.property.name}</td><td>{money(item.metrics.revenueKobo)}</td><td>{percentage(item.metrics.actualOccupancy)}</td><td>{moneyDecimal(item.metrics.revparKobo)}</td></tr>)}</tbody></table></div></section></FeatureGate></div>
       <div className="owner-breakdown-grid"><Breakdown title="Room revenue by room type" rows={metrics.byRoomType}/><Breakdown title="Revenue by booking source" rows={metrics.bySource}/><Breakdown title="Department revenue" rows={metrics.departments.map(row => ({ name: row.department_name, amountKobo: Number(row.revenue_kobo) }))}/></div>
       <div className="owner-aging-grid-wrap"><AgingCard title="Guest receivables aging" values={[metrics.receivables?.outstanding_kobo ?? 0, metrics.receivables?.age_0_30_kobo ?? 0, metrics.receivables?.age_31_60_kobo ?? 0, metrics.receivables?.age_61_90_kobo ?? 0, metrics.receivables?.age_90_plus_kobo ?? 0]} labels={["Outstanding", "0–30 days", "31–60 days", "61–90 days", "90+ days"]}/><AgingCard title="Supplier payable aging" values={[metrics.payables?.outstanding_kobo ?? 0, metrics.payables?.current_kobo ?? 0, metrics.payables?.overdue_1_30_kobo ?? 0, metrics.payables?.overdue_31_60_kobo ?? 0, metrics.payables?.overdue_90_plus_kobo ?? 0]} labels={["Outstanding", "Current", "1–30 overdue", "31–60 overdue", "90+ overdue"]}/></div>
       <p className="owner-footnote">Actual occupancy counts checked-in and checked-out stays; forecast occupancy also includes confirmed stays. ADR and RevPAR use posted room revenue. Operating profit is posted revenue less posted operating expenses.</p>
-    </div></details>}
+    </div></details></FeatureGate>}
   </div>;
 }

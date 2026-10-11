@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { HotelDashboard, type HotelContext, type LiveRoom, type LiveStay, type LiveFolio } from "@/components/hotel-dashboard";
 import { createClient } from "@/lib/supabase/server";
+import type { SubscriptionAccess } from "@/lib/saas/types";
 import { hasEnvVars } from "@/lib/utils";
 
 function first<T>(value: T | T[] | null | undefined): T | undefined {
@@ -65,9 +66,17 @@ async function HotelEntry({ searchParams }: { searchParams: Promise<{ property?:
     .eq("active", true)
     .order("created_at", { ascending: true });
   if (membershipError) return <HotelLoadNotice/>;
-  if (!memberships?.length) redirect("/onboarding");
+  if (!memberships?.length) {
+    const { data: admin } = await supabase.rpc("is_platform_admin");
+    redirect(admin === true ? "/platform" : "/onboarding");
+  }
 
   const organizationId = memberships[0].organization_id;
+  const [{ data: subscriptionData, error: subscriptionError }, { data: platformAdmin }] = await Promise.all([
+    supabase.rpc("get_subscription_access", { p_organization_id: organizationId }), supabase.rpc("is_platform_admin"),
+  ]);
+  // Only an absent migration permits the legacy workspace. Other failures fail closed.
+  if (subscriptionError && !["PGRST202", "42883"].includes(subscriptionError.code)) return <HotelLoadNotice/>;
   const { data: propertyRows, error: propertyError } = await supabase
     .from("properties").select("id,name").eq("organization_id", organizationId).order("created_at", { ascending: true });
   if (propertyError) return <HotelLoadNotice/>;
@@ -190,6 +199,8 @@ async function HotelEntry({ searchParams }: { searchParams: Promise<{ property?:
     : { data: [] };
   const context: HotelContext = {
     organizationId,
+    subscription: subscriptionData ? subscriptionData as SubscriptionAccess : undefined,
+    platformAdmin: platformAdmin === true,
     userId: user.id,
     properties: accessibleProperties.map(item => ({ id: item.id, name: item.name })),
     teamMembers: (teamRows ?? []).map((item: { user_id: string; email: string | null; full_name: string | null; role: string; active: boolean }) => ({ userId: item.user_id, email: item.email ?? "", fullName: item.full_name ?? "", role: item.role, active: item.active })),

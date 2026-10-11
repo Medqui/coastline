@@ -19,6 +19,8 @@ async function OnboardingContent() {
   if (!user) redirect("/auth/login");
   const { data: memberships } = await supabase.from("organization_memberships").select("organization_id").eq("user_id", user.id).eq("active", true).limit(1);
   if (memberships?.length) redirect("/");
+  const { data: platformAdmin } = await supabase.rpc("is_platform_admin");
+  if (platformAdmin === true) redirect("/platform");
 
-  return <main className="setup-page"><section className="setup-card setup-card-wide"><div className="brand-mark setup-logo">C</div><div className="eyebrow">WELCOME TO COASTLINE</div><h1>Set up your hotel</h1><p className="setup-copy">We’ll create your workspace, first property, standard room type and room list. You can add more room types and staff after setup.</p><HotelSetupForm/></section></main>;
+  return <main className="setup-page"><section className="setup-card setup-card-wide"><div className="brand-mark setup-logo">C</div><div className="eyebrow">WELCOME TO COASTLINE</div><h1>Set up your hotel</h1><p className="setup-copy">We’ll create your workspace, first property, standard room type and room list. Your workspace starts with a 14-day Business trial for one property. You can add more room types and staff after setup.</p><HotelSetupForm/></section></main>;
 }

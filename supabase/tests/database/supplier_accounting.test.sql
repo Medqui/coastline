@@ -7,6 +7,8 @@ select set_config('request.jwt.claims','{"sub":"18000000-0000-4000-8000-00000000
 create temp table sa_ctx(kind text primary key,organization_id uuid,property_id uuid);
 insert into sa_ctx select 'a',organization_id,property_id from public.setup_hotel('Supplier accounting tests','Primary test property',null,2,100000);
 insert into sa_ctx select 'b',organization_id,gen_random_uuid() from sa_ctx where kind='a';
+-- This fixture exercises a hotel group, so assign its multi-property plan.
+update public.saas_subscriptions set plan_code='group';
 insert into public.properties(id,organization_id,name) select property_id,organization_id,'Unassigned property' from sa_ctx where kind='b';
 insert into public.organizations(id,name,slug) values('28000000-0000-4000-8000-000000000002','Unrelated hotel','supplier-unrelated');
 insert into public.properties(id,organization_id,name) values('38000000-0000-4000-8000-000000000002','28000000-0000-4000-8000-000000000002','Other tenant property');

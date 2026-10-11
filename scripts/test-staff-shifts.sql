@@ -4,6 +4,8 @@ create function pg_temp.expect_failure(sql text,message text) returns void langu
 insert into auth.users(id,email) values('18000000-0000-4000-8000-000000000001','shift-owner@test.local'),('18000000-0000-4000-8000-000000000002','shift-desk@test.local');
 select set_config('request.jwt.claim.sub','18000000-0000-4000-8000-000000000001',true);
 create temp table shift_hotel as select * from public.setup_hotel('Shift tests','Shift property',null,1,10000);
+-- This fixture exercises a hotel group, so assign its multi-property plan.
+update public.saas_subscriptions set plan_code='group';
 create temp table shift_other as select public.create_property(organization_id,'Other property',null,1,10000) id from shift_hotel;
 insert into public.organization_memberships(organization_id,user_id,role,active,all_properties) select organization_id,'18000000-0000-4000-8000-000000000002','front_desk',true,false from shift_hotel;
 insert into public.membership_properties(organization_id,user_id,property_id) select organization_id,'18000000-0000-4000-8000-000000000002',property_id from shift_hotel;

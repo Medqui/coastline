@@ -20,7 +20,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - run: node --test scripts/read-with-retry.test.cjs scripts/pms-navigation.test.cjs
+      - run: node --test scripts/read-with-retry.test.cjs scripts/pms-navigation.test.cjs scripts/subscription-upgrades.test.cjs
       - run: npm run build
   database:
     runs-on: ubuntu-latest
@@ -35,5 +35,8 @@ jobs:
       - run: psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -v ON_ERROR_STOP=1 -q -f scripts/test-property-configuration.sql
       - run: psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -v ON_ERROR_STOP=1 -q -f scripts/test-stay-lifecycle.sql
       - run: psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -v ON_ERROR_STOP=1 -q -f scripts/test-staff-shifts.sql
+      - run: psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -v ON_ERROR_STOP=1 -q -f scripts/test-saas.sql
+      - run: psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -v ON_ERROR_STOP=1 -q -f scripts/test-subscription-revenue.sql
       - run: python3 scripts/test-migration-replay.py
       - run: python3 scripts/test-booking-concurrency.py
+      - run: python3 scripts/test-subscription-receipt-concurrency.py

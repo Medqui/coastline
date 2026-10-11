@@ -6,6 +6,8 @@ select set_config('request.jwt.claim.sub','19000000-0000-4000-8000-000000000001'
 create temp table fs_ctx(kind text primary key,organization_id uuid,property_id uuid);
 insert into fs_ctx select 'a',organization_id,property_id from public.setup_hotel('Statements tests','Statements property',null,2,100000);
 insert into fs_ctx select 'b',organization_id,gen_random_uuid() from fs_ctx where kind='a';
+-- This fixture exercises a hotel group, so assign its multi-property plan.
+update public.saas_subscriptions set plan_code='group';
 insert into public.properties(id,organization_id,name) select property_id,organization_id,'Restricted property' from fs_ctx where kind='b';
 insert into public.organizations(id,name,slug) values('29000000-0000-4000-8000-000000000002','Foreign statements hotel','foreign-statements');
 insert into public.properties(id,organization_id,name) values('39000000-0000-4000-8000-000000000002','29000000-0000-4000-8000-000000000002','Foreign statements property');

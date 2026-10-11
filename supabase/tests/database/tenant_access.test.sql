@@ -12,6 +12,8 @@ insert into public.organizations (id,name,slug) values
   ('20000000-0000-4000-8000-000000000001','Test hotel group','test-hotel-group'),
   ('20000000-0000-4000-8000-000000000002','Other hotel group','other-hotel-group');
 
+-- This fixture exercises a hotel group, so assign its multi-property plan.
+update public.saas_subscriptions set plan_code='group';
 insert into public.properties (id,organization_id,name) values
   ('30000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','Front desk property'),
   ('30000000-0000-4000-8000-000000000002','20000000-0000-4000-8000-000000000001','Accountant property'),

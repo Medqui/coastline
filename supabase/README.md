@@ -1,7 +1,7 @@
 # Supabase setup
 
 1. Create a Supabase project and configure Auth email sign-in.
-2. For CLI installs, link your project and run `supabase db push`. Migrations 006 and 008–018 tolerate the supported previously installed objects, including SQL Editor installs not yet recorded in CLI history. The complete current migration sequence can be replayed without changing stored hotel records. For SQL Editor installs, run the **whole** `supabase/repeatable-install.sql` file. It installs or upgrades migrations 000–018 in one transaction, tracks its checksum, and makes subsequent runs of the same release a no-op. It rejects a recorded newer/different release rather than downgrading it. Use the latest generated installer; older exported bundles may not have replay protection.
+2. For CLI installs, link your project and run `supabase db push`. Migrations 006 and 008–022 tolerate the supported previously installed objects, including SQL Editor installs not yet recorded in CLI history. The complete current migration sequence can be replayed without changing stored hotel records. For SQL Editor installs, run the **whole** `supabase/repeatable-install.sql` file. It installs or upgrades migrations 000–022 in one transaction, tracks its checksum, and makes subsequent runs of the same release a no-op. It rejects a recorded newer/different release rather than downgrading it. Use the latest generated installer; older exported bundles may not have replay protection.
 3. Copy `.env.example` to `.env.local` and set the Supabase project URL and publishable key. Never put the service-role key in this app's browser environment.
 4. Restart `npm run dev`, sign up, verify the email if confirmation is enabled, then sign in. The app will send a user without a hotel membership to `/onboarding`.
 5. Set up the organization, property, room count and standard nightly rate. The setup transaction creates the owner membership and rooms.
@@ -34,3 +34,23 @@ Hosted CLI migration history is current through `20261005000200_property_configu
 The hosted database passed 29 configuration/role/property assertions and 12 overnight lifecycle/accounting assertions using fully rolled-back synthetic fixtures. CI runs the corresponding SQL scenarios before migration replay and concurrency tests. This verifies the database role boundary; separate interactive sign-ins for each staff role remain a later acceptance step. See `docs/connected-mvp-acceptance.md` for results and retained test records.
 
 Staff identity and operational shifts: see `docs/staff-shifts.md`. Releases 017 and 018 are deployed. CI runs `scripts/test-staff-shifts.sql` for ownership, cashier-close guards, handover privacy and named invitation acceptance.
+
+
+## SaaS foundation — release 019
+
+`20261011000000_saas_foundation.sql` adds Starter, Business and Group entitlements, organization subscriptions, capacity enforcement, a 14-day Business trial for new organizations, and a separate platform administrator role. Existing organizations retain unrestricted pilot access. `/platform` shows real onboarding, usage and subscription metadata; `/subscription` explains the current plan. See `docs/saas-foundation.md` for access, lifecycle and verification details.
+
+The requested platform account `aletomiwa@gmail.com` is explicitly provisioned if that account already exists in Auth at migration time. Release 020 reserves that same email when its account does not yet exist; the grant activates only after Auth verifies the email. No hotel role or user-editable metadata can grant platform administration. Do not expose database credentials or a service-role key in the frontend.
+
+
+## Subscription pricing and revenue — releases 021–022
+
+Launch monthly prices are Starter ₦15,000, Business ₦35,000 and Group from ₦75,000, with custom quotes for larger groups. `saas_plan_prices` stores the catalogue independently of each customer's agreed subscription fee; installing these releases preserves all existing fees and pilot access.
+
+The platform Revenue page reports active contracted MRR, its annual projection, overdue contracted amounts, net recorded collections, twelve monthly buckets, tier totals and the latest 50 payment/refund entries. Report aggregates cover the entire ledger, not just the visible 50 entries. Catalogue prices are also shown in the hotel plan page and prefill new activation/upgrade quotes.
+
+Subscription payments are recorded manually after funds are received. No payment provider, automated charging, invoices, receivables, tax calculation or accounting revenue recognition is implemented. This ledger is separate from hotels' guest payments and revenue. Recording money never activates a plan or renews an account automatically.
+
+Receipt RPCs require explicit platform administration. Each request has an idempotency UUID and each payment/refund has a unique reference. Posted records cannot be edited or deleted. Refunds refer to a locked original payment, inherit its original tier and test classification, and cannot exceed its remaining refundable balance or precede its receipt date. Test receipts remain excluded when a test workspace becomes a live customer. Release 022 resolves refund classification from the original payment for historical reporting too, without rewriting stored receipts.
+
+CI runs `scripts/test-subscription-revenue.sql` for rollback-only authorization, pricing, refund and aggregation scenarios. Populated replay now preserves custom catalogue prices and an immutable subscription receipt. `scripts/test-subscription-receipt-concurrency.py` verifies simultaneous retries, duplicate references and refund races in a disposable local database; run it after replay tests, since it retains synthetic fixtures for inspection.
